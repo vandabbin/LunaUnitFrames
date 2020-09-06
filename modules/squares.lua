@@ -4,7 +4,6 @@ LunaUF:RegisterModule(Squares, "squares", LunaUF.L["Squares"])
 
 local lCD = LibStub("LibClassicDurations")
 
-local vex = LibStub("LibVexation-1.0", true)
 local canCure = LunaUF.Units.canCure
 local backdrop = {
 	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -14,23 +13,16 @@ local backdrop = {
 }
 local positions = {
 	topright = "TOPRIGHT",
+	top = "TOP",
 	topleft = "TOPLEFT",
 	leftcenter = "LEFTCENTER",
 	center = "CENTER",
 	rightcenter = "RIGHTCENTER",
 	bottomright = "BOTTOMRIGHT",
+	bottom = "BOTTOM",
 	bottomleft = "BOTTOMLEFT",
 }
 local indicator = "Interface\\AddOns\\LunaUnitFrames\\media\\textures\\indicator"
-
-local function SquaresCallback(aggro, GUID, ...)
-	for _,frame in pairs(LunaUF.Units.unitFrames) do
-		if frame.unitGUID and frame.unitGUID == GUID then
-			Squares:Update(frame)
-		end
-	end
-end
-vex:RegisterCallback(SquaresCallback)
 
 local function checkAura(unit, spells, playeronly)
 	local spells = {strsplit(";",spells)}
@@ -77,33 +69,63 @@ local function checkAura(unit, spells, playeronly)
 	end
 end
 
+local function isManaUser(unit)
+	local unitClass = select(2, UnitClass(unit))
+	if unitClass == "ROGUE" or unitClass == "WARRIOR" then
+		return false
+	else
+		return true
+	end
+end
+
 local function checkMissingBuff(unit, spells)
-	local spells = {strsplit(";",spells)}
+	local spellGroups = {strsplit(";",spells)}
 	local found
-	for k,spell in ipairs(spells) do
-		if tonumber(spell) then
-			local i, spellID = 1, select(10,UnitAura(unit, 1))
-			while spellID do
-				if spellID == tonumber(spell) then
+	local j
+	local spellGroup
+	local spell = ""
+	local missingSpell = ""
+	for j,spellGroup in ipairs(spellGroups) do
+		-- Allow "Arcane Intellect[mana]/Arcane Brilliance[mana]"
+		-- Should only show as missing if both are missing.
+		-- Should only check mana users.
+		local localSpells = {strsplit("/",spellGroup)}
+		local k
+		for k,spell in ipairs(localSpells) do
+			local f1 = spell:find("[mana]")
+			if f1 ~= nil then
+				spell = spell:gsub("%[mana%]", "")
+				if not isManaUser(unit) then
 					found = true
 				end
-				i = i + 1
-				spellID = select(10, UnitAura(unit, i))
 			end
-		elseif type(spell) == "string" then
-			local i, spellName = 1, UnitAura(unit, 1)
-			while spellName do
-				if spellName == spell then
-					found = true
+			if found == nil or found == false then
+				missingSpell = spell
+				if tonumber(spell) then
+					local i, spellID = 1, select(10,UnitAura(unit, 1))
+					while spellID do
+						if spellID == tonumber(spell) then
+							found = true
+						end
+						i = i + 1
+						spellID = select(10, UnitAura(unit, i))
+					end
+				elseif type(spell) == "string" then
+					local i, spellName = 1, UnitAura(unit, 1)
+					while spellName do
+						if spellName == spell then
+							found = true
+						end
+						i = i + 1
+						spellName = UnitAura(unit, i)
+					end
 				end
-				i = i + 1
-				spellName = UnitAura(unit, i)
 			end
 		end
-		if found or spell == "" then
+		if found or missingSpell == "" then
 			found = nil
 		else
-			return spell
+			return missingSpell
 		end
 	end
 end
@@ -145,15 +167,18 @@ function Squares:OnEnable(frame)
 			frame.squares.square[k].cd:Hide()
 		end
 		frame.squares.square["topright"]:SetPoint("TOPRIGHT", frame.squares, "TOPRIGHT", -1, -1)
+		frame.squares.square["top"]:SetPoint("TOP", frame.squares, "TOP", 0, -1)
 		frame.squares.square["topleft"]:SetPoint("TOPLEFT", frame.squares, "TOPLEFT", 1, -1)
 		frame.squares.square["leftcenter"]:SetPoint("RIGHT", frame.squares.square["center"], "LEFT", 0, 0)
 		frame.squares.square["center"]:SetPoint("CENTER", frame.squares, "CENTER", 0, 0)
 		frame.squares.square["rightcenter"]:SetPoint("LEFT", frame.squares.square["center"], "RIGHT", 0, 0)
 		frame.squares.square["bottomright"]:SetPoint("BOTTOMRIGHT", frame.squares, "BOTTOMRIGHT", -1, 1)
+		frame.squares.square["bottom"]:SetPoint("BOTTOM", frame.squares, "BOTTOM", 0, 1)
 		frame.squares.square["bottomleft"]:SetPoint("BOTTOMLEFT", frame.squares, "BOTTOMLEFT", 1, 1)
 	end
 	
 	frame:RegisterUnitEvent("UNIT_AURA", self, "Update")
+	frame:RegisterUnitEvent("UNIT_THREAT_SITUATION_UPDATE", self, "Update")
 	frame:RegisterUpdateFunc(self, "Update")
 	
 end
@@ -171,8 +196,8 @@ function Squares:OnLayoutApplied(frame, config)
 end
 
 function Squares:Update(frame)
-	if not frame.squares then return end
-	local aggro = vex:GetUnitAggroByUnitGUID(frame.unitGUID)
+	if not frame.squares or not UnitExists(frame.unit) then return end
+	local aggro = (UnitThreatSituation(frame.unit) or 0) > 1
 	local config = LunaUF.db.profile.units[frame.unitType].squares
 	for pos, square in pairs(frame.squares.square) do
 		if not config[pos].enabled then

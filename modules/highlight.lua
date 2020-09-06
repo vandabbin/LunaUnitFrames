@@ -1,19 +1,7 @@
 local Highlight = {}
-local goldColor, mouseColor = {r = 0.75, g = 0.75, b = 0.35}, {r = 0.75, g = 0.75, b = 0.50}
 
 local canCure = LunaUF.Units.canCure
 LunaUF:RegisterModule(Highlight, "highlight", LunaUF.L["Highlight"])
-
-local vex = LibStub("LibVexation-1.0", true)
-
-local function HighlightCallback(aggro, GUID, ...)
-	for _,frame in pairs(LunaUF.Units.unitFrames) do
-		if frame.unitGUID and frame.unitGUID == GUID then
-			Highlight:UpdateThreat(frame)
-		end
-	end
-end
-vex:RegisterCallback(HighlightCallback)
 
 local function OnEnter(frame)
 	if( LunaUF.db.profile.units[frame.unitType].highlight.mouseover ) then
@@ -44,6 +32,7 @@ function Highlight:OnEnable(frame)
 		frame.highlight:Hide()
 	end
 	
+	frame:RegisterUnitEvent("UNIT_THREAT_SITUATION_UPDATE", self, "UpdateThreat")
 	frame:RegisterUpdateFunc(self, "UpdateThreat")
 	
 	if( frame.unitType ~= "target" ) then
@@ -88,9 +77,9 @@ function Highlight:Update(frame)
 	elseif( frame.highlight.hasThreat ) then
 		color = LunaUF.db.profile.colors.hostile
 	elseif( frame.highlight.hasAttention ) then
-		color = goldColor
+		color = LunaUF.db.profile.colors.target
 	elseif( frame.highlight.hasMouseover ) then
-		color = mouseColor
+		color = LunaUF.db.profile.colors.mouseover
 	end
 
 	if( color ) then
@@ -102,7 +91,8 @@ function Highlight:Update(frame)
 end
 
 function Highlight:UpdateThreat(frame)
-	frame.highlight.hasThreat = LunaUF.db.profile.units[frame.unitType].highlight.aggro and vex:GetUnitAggroByUnitGUID(frame.unitGUID)
+	if not UnitExists(frame.unit) then return end
+	frame.highlight.hasThreat = LunaUF.db.profile.units[frame.unitType].highlight.aggro and (UnitThreatSituation(frame.unit) or 0) > 1
 	self:Update(frame)
 end
 
@@ -116,9 +106,7 @@ function Highlight:UpdateAura(frame)
 	local showOwn = LunaUF.db.profile.units[frame.unitType].highlight.debuff == 2
 	local showAll = LunaUF.db.profile.units[frame.unitType].highlight.debuff == 3
 	if( UnitIsFriend(frame.unit, "player") and LunaUF.db.profile.units[frame.unitType].highlight.debuff ~= 1 ) then
-		local id = 0
-		while( true ) do
-			id = id + 1
+		for id=1, 32 do
 			local name, _, _, auraType = UnitDebuff(frame.unit, id)
 			if( not name ) then break end
 			
